@@ -2,6 +2,12 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import * as Y from 'yjs';
+import {
+    Awareness,
+    applyAwarenessUpdate,
+    encodeAwarenessUpdate,
+    removeAwarenessStates,
+} from 'y-protocols/awareness';
 
 const app = express();
 const httpServer = createServer(app);
@@ -14,6 +20,7 @@ const io = new Server(httpServer, {
 });
 
 const docs = new Map();
+const awarenesses = new Map();
 
 function getDoc(roomId) {
     let doc = docs.get(roomId);
@@ -24,21 +31,52 @@ function getDoc(roomId) {
     return doc;
 }
 
+function getAwareness(roomId) {
+    let a = awarenesses.get(roomId);
+    if (!a) {
+        a = new Awareness(getDoc(roomId));
+        awarenesses.set(roomId, a);
+    }
+    return a;
+}
+
 io.on('connection', (socket) => {
-    socket.on('join', (roomId) => {
+    let socketRoom = null;
+    let socketClientId = null;
+
+    socket.on('join', ({ roomId, clientId }) => {
+        socketRoom = roomId;
+        socketClientId = clientId;
         socket.join(roomId);
+
         const doc = getDoc(roomId);
         socket.emit('sync', Y.encodeStateAsUpdate(doc));
+
+        const awareness = getAwareness(roomId);
+        const states = awareness.getStates();
+        if (states.size > 0) {
+            socket.emit('awareness', encodeAwarenessUpdate(awareness, [...states.keys()]));
+        }
     });
 
     socket.on('update', ({ roomId, update }) => {
-        const doc = getDoc(roomId);
-        Y.applyUpdate(doc, new Uint8Array(update));
+        Y.applyUpdate(getDoc(roomId), new Uint8Array(update));
         socket.to(roomId).emit('update', update);
     });
 
-    socket.on('awareness', ({ roomId, update }) => {
+    socket.on('awareness', ({ roomId, update, clientId }) => {
+        if (clientId != null) socketClientId = clientId;
+        applyAwarenessUpdate(getAwareness(roomId), new Uint8Array(update), socket.id);
         socket.to(roomId).emit('awareness', update);
+    });
+
+    socket.on('disconnect', () => {
+        if (socketRoom != null && socketClientId != null) {
+            const awareness = getAwareness(socketRoom);
+            removeAwarenessStates(awareness, [socketClientId], 'connection-closed');
+            const removalUpdate = encodeAwarenessUpdate(awareness, [socketClientId]);
+            io.to(socketRoom).emit('awareness', removalUpdate);
+        }
     });
 });
 
