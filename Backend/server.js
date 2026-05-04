@@ -12,11 +12,20 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { customAlphabet } from 'nanoid';
 import cors from 'cors';
+import Redis from 'ioredis';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const generateRoomId = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 6);
 const GRACE_PERIOD_MS = 30_000;
+const SAVE_DEBOUNCE_MS = 2_000;
+
+const redis = new Redis({
+    host: process.env.REDIS_HOST || '127.0.0.1',
+    port: Number(process.env.REDIS_PORT) || 6379,
+});
+
+redis.on('error', (err) => console.error('[redis]', err.message));
 
 const app = express();
 app.use(cors());
@@ -25,20 +34,42 @@ app.use(express.static(path.join(__dirname, 'public')));
 const httpServer = createServer(app);
 
 const io = new Server(httpServer, {
-    cors: { origin: "*", methods: ["GET", "POST"] }
+    cors: { origin: '*', methods: ['GET', 'POST'] }
 });
 
 const docs = new Map();
 const awarenesses = new Map();
 const rooms = new Map();
+const saveTimers = new Map();
+
+function metaKey(id)  { return `room:${id}:meta`; }
+function docKey(id)   { return `room:${id}:doc`; }
+
+function scheduleSave(roomId) {
+    if (saveTimers.has(roomId)) clearTimeout(saveTimers.get(roomId));
+    const timer = setTimeout(() => saveDoc(roomId), SAVE_DEBOUNCE_MS);
+    saveTimers.set(roomId, timer);
+}
+
+async function saveDoc(roomId) {
+    saveTimers.delete(roomId);
+    const doc = docs.get(roomId);
+    if (!doc) return;
+    const bytes = Y.encodeStateAsUpdate(doc);
+    await redis.set(docKey(roomId), Buffer.from(bytes));
+}
+
+async function ensureDocLoaded(roomId) {
+    if (docs.has(roomId)) return;
+    const bytes = await redis.getBuffer(docKey(roomId));
+    const doc = new Y.Doc();
+    if (bytes) Y.applyUpdate(doc, new Uint8Array(bytes));
+    doc.on('update', () => scheduleSave(roomId));
+    docs.set(roomId, doc);
+}
 
 function getDoc(roomId) {
-    let doc = docs.get(roomId);
-    if (!doc) {
-        doc = new Y.Doc();
-        docs.set(roomId, doc);
-    }
-    return doc;
+    return docs.get(roomId);
 }
 
 function getAwareness(roomId) {
@@ -50,30 +81,62 @@ function getAwareness(roomId) {
     return a;
 }
 
-function deleteRoom(roomId) {
+async function deleteRoom(roomId) {
     rooms.delete(roomId);
     docs.delete(roomId);
     const a = awarenesses.get(roomId);
     if (a) a.destroy();
     awarenesses.delete(roomId);
+    if (saveTimers.has(roomId)) {
+        clearTimeout(saveTimers.get(roomId));
+        saveTimers.delete(roomId);
+    }
+    await redis.del(metaKey(roomId), docKey(roomId));
     console.log(`[room ${roomId}] deleted`);
 }
 
-app.post('/rooms', (req, res) => {
+async function restoreRoomsFromRedis() {
+    let cursor = '0';
+    const found = [];
+    do {
+        const [next, batch] = await redis.scan(cursor, 'MATCH', 'room:*:meta', 'COUNT', 100);
+        cursor = next;
+        found.push(...batch);
+    } while (cursor !== '0');
+
+    for (const key of found) {
+        const id = key.slice('room:'.length, -':meta'.length);
+        const meta = await redis.hgetall(key);
+        if (!meta || !meta.creator) continue;
+        rooms.set(id, {
+            creator: meta.creator,
+            createdAt: Number(meta.createdAt) || Date.now(),
+            connectionCount: 0,
+            deletionTimer: setTimeout(() => deleteRoom(id), GRACE_PERIOD_MS),
+        });
+    }
+    console.log(`[startup] restored ${rooms.size} rooms from Redis`);
+}
+
+app.post('/rooms', async (req, res) => {
     const { creator } = req.body || {};
     if (!creator || typeof creator !== 'string' || !creator.trim()) {
         return res.status(400).json({ error: 'creator (username) required' });
     }
     let roomId;
     do { roomId = generateRoomId(); } while (rooms.has(roomId));
+    const trimmedCreator = creator.trim();
+    const createdAt = Date.now();
+
+    await redis.hset(metaKey(roomId), { creator: trimmedCreator, createdAt: String(createdAt) });
     rooms.set(roomId, {
-        creator: creator.trim(),
-        createdAt: Date.now(),
+        creator: trimmedCreator,
+        createdAt,
         connectionCount: 0,
-        deletionTimer: null,
+        deletionTimer: setTimeout(() => deleteRoom(roomId), GRACE_PERIOD_MS),
     });
-    console.log(`[room ${roomId}] created by ${creator.trim()}`);
-    res.json({ id: roomId, creator: creator.trim() });
+    console.log(`[room ${roomId}] created by ${trimmedCreator}`);
+    res.json({ id: roomId, creator: trimmedCreator });
 });
 
 app.get('/rooms/:id', (req, res) => {
@@ -90,7 +153,7 @@ io.on('connection', (socket) => {
     let socketRoom = null;
     let socketClientId = null;
 
-    socket.on('join', ({ roomId, clientId }) => {
+    socket.on('join', async ({ roomId, clientId }) => {
         const room = rooms.get(roomId);
         if (!room) {
             socket.emit('room-error', { message: 'Room not found' });
@@ -109,6 +172,8 @@ io.on('connection', (socket) => {
         }
         room.connectionCount++;
 
+        await ensureDocLoaded(roomId);
+
         socket.emit('room-info', { id: roomId, creator: room.creator });
 
         const doc = getDoc(roomId);
@@ -121,14 +186,16 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('update', ({ roomId, update }) => {
+    socket.on('update', async ({ roomId, update }) => {
         if (!rooms.has(roomId)) return;
+        await ensureDocLoaded(roomId);
         Y.applyUpdate(getDoc(roomId), new Uint8Array(update));
         socket.to(roomId).emit('update', update);
     });
 
-    socket.on('awareness', ({ roomId, update, clientId }) => {
+    socket.on('awareness', async ({ roomId, update, clientId }) => {
         if (!rooms.has(roomId)) return;
+        await ensureDocLoaded(roomId);
         if (clientId != null) socketClientId = clientId;
         applyAwarenessUpdate(getAwareness(roomId), new Uint8Array(update), socket.id);
         socket.to(roomId).emit('awareness', update);
@@ -155,6 +222,9 @@ io.on('connection', (socket) => {
     });
 });
 
-httpServer.listen(3000, () => {
-    console.log('Server is running on port 3000');
-});
+restoreRoomsFromRedis()
+    .then(() => httpServer.listen(3000, () => console.log('Server is running on port 3000')))
+    .catch((err) => {
+        console.error('Failed to restore from Redis:', err);
+        process.exit(1);
+    });

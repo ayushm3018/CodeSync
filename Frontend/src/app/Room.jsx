@@ -18,7 +18,7 @@ function Room() {
     if (!username) navigate("/")
   }, [username, navigate])
 
-  const { yText, awareness, users, creator, error } = useCollab({
+  const { yText, awareness, users, creator, error, connected } = useCollab({
     url: SERVER_URL,
     roomId,
     username,
@@ -56,7 +56,24 @@ function Room() {
       <aside className="h-full w-1/4 bg-amber-50 rounded-lg flex flex-col">
         <div className="p-4 border-b border-gray-300 flex items-center justify-between">
           <div>
-            <p className="text-xs text-gray-600 uppercase tracking-wide">Room</p>
+            <div className="flex items-center gap-2">
+              <p className="text-xs text-gray-600 uppercase tracking-wide">Room</p>
+              <span
+                title={connected ? "Connected" : "Disconnected"}
+                className={`inline-flex items-center gap-1 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded ${
+                  connected
+                    ? "bg-green-100 text-green-800"
+                    : "bg-red-100 text-red-800"
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    connected ? "bg-green-500 animate-pulse" : "bg-red-500"
+                  }`}
+                />
+                {connected ? "Live" : "Offline"}
+              </span>
+            </div>
             <p className="font-mono text-lg font-bold tracking-wider">{roomId}</p>
           </div>
           <button

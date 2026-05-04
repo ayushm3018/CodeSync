@@ -17,6 +17,7 @@ export function useCollab({ url, roomId, username }) {
   const [users, setUsers] = useState([])
   const [creator, setCreator] = useState(null)
   const [error, setError] = useState(null)
+  const [connected, setConnected] = useState(false)
 
   useEffect(() => {
     if (!username) return
@@ -28,7 +29,12 @@ export function useCollab({ url, roomId, username }) {
     const socket = io(url)
 
     socket.on("connect", () => {
+      setConnected(true)
       socket.emit("join", { roomId, clientId: awareness.clientID })
+    })
+
+    socket.on("disconnect", () => {
+      setConnected(false)
     })
 
     socket.on("room-info", ({ creator }) => {
@@ -90,5 +96,5 @@ export function useCollab({ url, roomId, username }) {
     }
   }, [url, roomId, username, ydoc, awareness])
 
-  return { yText, awareness, users, creator, error }
+  return { yText, awareness, users, creator, error, connected }
 }
