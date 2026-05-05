@@ -13,6 +13,7 @@ const randomColor = () => COLORS[Math.floor(Math.random() * COLORS.length)]
 export function useCollab({ url, roomId, username }) {
   const ydoc = useMemo(() => new Y.Doc(), [roomId])
   const yText = useMemo(() => ydoc.getText("monaco"), [ydoc])
+  const yChat = useMemo(() => ydoc.getArray("chat"), [ydoc])
   const awareness = useMemo(() => new Awareness(ydoc), [ydoc])
   const [users, setUsers] = useState([])
   const [creator, setCreator] = useState(null)
@@ -96,5 +97,5 @@ export function useCollab({ url, roomId, username }) {
     }
   }, [url, roomId, username, ydoc, awareness])
 
-  return { yText, awareness, users, creator, error, connected }
+  return { yText, yChat, awareness, users, creator, error, connected }
 }

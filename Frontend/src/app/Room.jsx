@@ -3,6 +3,7 @@ import { MonacoBinding } from "y-monaco"
 import { useRef, useState, useEffect } from "react"
 import { useParams, useNavigate, useSearchParams } from "react-router-dom"
 import { useCollab } from "../hooks/useCollab"
+import Chat from "./Chat"
 
 const SERVER_URL = import.meta.env.PROD ? "" : "http://localhost:3000"
 
@@ -18,7 +19,7 @@ function Room() {
     if (!username) navigate("/")
   }, [username, navigate])
 
-  const { yText, awareness, users, creator, error, connected } = useCollab({
+  const { yText, yChat, awareness, users, creator, error, connected } = useCollab({
     url: SERVER_URL,
     roomId,
     username,
@@ -52,7 +53,8 @@ function Room() {
   }
 
   return (
-    <main className="h-screen w-full bg-gray-950 flex gap-4 p-2">
+    <main className="h-screen w-full bg-gray-950 flex flex-col gap-2 p-2">
+      <div className="flex gap-2 flex-1 min-h-0">
       <aside className="h-full w-1/4 bg-amber-50 rounded-lg flex flex-col">
         <div className="p-4 border-b border-gray-300 flex items-center justify-between">
           <div>
@@ -116,6 +118,10 @@ function Room() {
           onMount={handleMount}
         />
       </section>
+      </div>
+      <div className="h-[32vh] min-h-[200px]">
+        <Chat yChat={yChat} username={username} />
+      </div>
     </main>
   )
 }
