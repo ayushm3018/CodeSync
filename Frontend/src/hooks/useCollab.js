@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import * as Y from "yjs"
 import {
   Awareness,
@@ -8,22 +8,39 @@ import {
 import { io } from "socket.io-client"
 
 const COLORS = ["#ef4444", "#f59e0b", "#10b981", "#3b82f6", "#a855f7", "#ec4899"]
-const randomColor = () => COLORS[Math.floor(Math.random() * COLORS.length)]
+const pickColor = () => COLORS[Math.floor(Math.random() * COLORS.length)]
 
 export function useCollab({ url, roomId, username }) {
   const ydoc = useMemo(() => new Y.Doc(), [roomId])
   const yText = useMemo(() => ydoc.getText("monaco"), [ydoc])
   const yChat = useMemo(() => ydoc.getArray("chat"), [ydoc])
+  const yMeta = useMemo(() => ydoc.getMap("meta"), [ydoc])
   const awareness = useMemo(() => new Awareness(ydoc), [ydoc])
   const [users, setUsers] = useState([])
   const [creator, setCreator] = useState(null)
   const [error, setError] = useState(null)
   const [connected, setConnected] = useState(false)
+  const [language, setLanguage] = useState(() => yMeta.get("language") || "javascript")
+  const colorRef = useRef(pickColor())
 
   useEffect(() => {
     if (!username) return
-    awareness.setLocalStateField("user", { name: username, color: randomColor() })
+    awareness.setLocalStateField("user", { name: username, color: colorRef.current })
   }, [awareness, username])
+
+  useEffect(() => {
+    const onMetaChange = () => {
+      const next = yMeta.get("language") || "javascript"
+      setLanguage(next)
+    }
+    yMeta.observe(onMetaChange)
+    onMetaChange()
+    return () => yMeta.unobserve(onMetaChange)
+  }, [yMeta])
+
+  const changeLanguage = (lang) => {
+    yMeta.set("language", lang)
+  }
 
   useEffect(() => {
     if (!roomId || !username) return
@@ -97,5 +114,5 @@ export function useCollab({ url, roomId, username }) {
     }
   }, [url, roomId, username, ydoc, awareness])
 
-  return { yText, yChat, awareness, users, creator, error, connected }
+  return { yText, yChat, awareness, users, creator, error, connected, language, changeLanguage }
 }
