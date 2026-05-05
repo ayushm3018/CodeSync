@@ -24,12 +24,13 @@ function Chat({ yChat, username, onClose, onResizeStart }) {
           username: m.get("username"),
           content: m.get("content"),
           timestamp: m.get("timestamp"),
+          streaming: m.get("streaming"),
         }))
       )
     }
-    yChat.observe(update)
+    yChat.observeDeep(update)
     update()
-    return () => yChat.unobserve(update)
+    return () => yChat.unobserveDeep(update)
   }, [yChat])
 
   useEffect(() => {
@@ -56,6 +57,11 @@ function Chat({ yChat, username, onClose, onResizeStart }) {
   }
 
   const lastIsUser = messages.length > 0 && messages[messages.length - 1].role === "user"
+  const lastIsStreamingEmpty =
+    messages.length > 0 &&
+    messages[messages.length - 1].role === "assistant" &&
+    messages[messages.length - 1].streaming &&
+    !messages[messages.length - 1].content
 
   return (
     <div className="h-full bg-neutral-900 rounded-lg flex flex-col border border-neutral-800 relative">
@@ -130,6 +136,9 @@ function Chat({ yChat, username, onClose, onResizeStart }) {
                   >
                     {m.content}
                   </ReactMarkdown>
+                  {m.streaming && m.content && (
+                    <span className="inline-block w-1.5 h-3 ml-0.5 bg-white/80 animate-pulse align-middle" />
+                  )}
                 </div>
               ) : (
                 <p className="whitespace-pre-wrap leading-relaxed">{m.content}</p>
@@ -137,7 +146,7 @@ function Chat({ yChat, username, onClose, onResizeStart }) {
             </div>
           </div>
         ))}
-        {lastIsUser && (
+        {(lastIsUser || lastIsStreamingEmpty) && (
           <div className="flex justify-start">
             <div className="bg-purple-700/50 text-white rounded-lg px-3 py-2 text-sm italic opacity-70">
               CodeAssist is thinking...
