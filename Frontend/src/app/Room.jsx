@@ -13,6 +13,11 @@ const LANGUAGES = [
   "html", "css", "json", "markdown", "sql", "shell", "yaml",
 ]
 
+const RUNNABLE_LANGUAGES = new Set([
+  "javascript", "typescript", "python", "java", "cpp", "c", "csharp",
+  "go", "rust", "ruby", "php", "swift", "kotlin", "shell", "sql",
+])
+
 const MIN_CHAT_HEIGHT = 180
 const DEFAULT_CHAT_HEIGHT = 320
 
@@ -37,8 +42,31 @@ function Room() {
     if (!username) navigate("/")
   }, [username, navigate])
 
-  const { yText, yChat, awareness, users, creator, error, connected, language, changeLanguage } =
-    useCollab({ url: SERVER_URL, roomId, username })
+  const {
+    yText, yChat, awareness, users, creator, error, connected,
+    language, changeLanguage,
+    runState, triggerRun, clearEditor,
+  } = useCollab({ url: SERVER_URL, roomId, username })
+
+  const [outputOpen, setOutputOpen] = useState(true)
+  const lastRunIdRef = useRef(null)
+
+  useEffect(() => {
+    if (runState && runState.id !== lastRunIdRef.current) {
+      lastRunIdRef.current = runState.id
+      setOutputOpen(true)
+    }
+  }, [runState])
+
+  const canRun = RUNNABLE_LANGUAGES.has(language) && runState?.status !== "running"
+  const isRunning = runState?.status === "running"
+
+  const handleClear = () => {
+    if (yText.length === 0) return
+    if (window.confirm("Clear all code? This affects everyone in the room.")) {
+      clearEditor()
+    }
+  }
 
   // Track unread count when chat is closed
   useEffect(() => {
@@ -201,14 +229,103 @@ function Room() {
           </ul>
         </aside>
 
-        <section className="w-3/4 bg-neutral-800 rounded-lg overflow-hidden">
-          <Editor
-            height="100%"
-            language={language}
-            defaultValue="// start typing..."
-            theme="vs-dark"
-            onMount={handleMount}
-          />
+        <section className="w-3/4 bg-neutral-800 rounded-lg overflow-hidden flex flex-col">
+          <div className="px-3 py-2 border-b border-neutral-700 flex items-center justify-between bg-neutral-900">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={triggerRun}
+                disabled={!canRun}
+                title={
+                  !RUNNABLE_LANGUAGES.has(language)
+                    ? `${language} can't be executed`
+                    : isRunning
+                      ? "A run is already in progress"
+                      : "Run code"
+                }
+                className="px-3 py-1 text-xs font-semibold rounded bg-green-600 text-white hover:bg-green-500 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+              >
+                {isRunning ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                    Running
+                  </>
+                ) : (
+                  <>▶ Run</>
+                )}
+              </button>
+              <button
+                onClick={handleClear}
+                className="px-3 py-1 text-xs font-semibold rounded bg-neutral-700 text-gray-200 hover:bg-neutral-600"
+              >
+                Clear
+              </button>
+            </div>
+            <span className="text-xs text-gray-400 font-mono">{language}</span>
+          </div>
+
+          <div className="flex-1 min-h-0">
+            <Editor
+              height="100%"
+              language={language}
+              defaultValue="// start typing..."
+              theme="vs-dark"
+              onMount={handleMount}
+            />
+          </div>
+
+          {runState && outputOpen && (
+            <div className="border-t border-neutral-700 max-h-[40%] overflow-hidden flex flex-col">
+              <div className="px-3 py-1.5 flex justify-between items-center bg-neutral-900 border-b border-neutral-800">
+                <span className="text-xs text-gray-300">
+                  {runState.status === "running" && (
+                    <>⏳ <span className="font-semibold">{runState.runBy}</span> is running {runState.language}…</>
+                  )}
+                  {runState.status === "done" && (
+                    <>
+                      Output{" "}
+                      <span className="text-gray-500">
+                        (ran by {runState.runBy} · exit {runState.exitCode})
+                      </span>
+                    </>
+                  )}
+                  {runState.status === "error" && (
+                    <span className="text-red-400">Run failed: {runState.error}</span>
+                  )}
+                </span>
+                <button
+                  onClick={() => setOutputOpen(false)}
+                  className="text-gray-400 hover:text-white text-lg leading-none px-2"
+                  title="Close"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="overflow-y-auto p-3 font-mono text-xs text-gray-200 whitespace-pre-wrap">
+                {runState.compileStderr && (
+                  <div className="text-yellow-400 mb-2">{runState.compileStderr}</div>
+                )}
+                {runState.stdout || ""}
+                {runState.stderr && (
+                  <div className="text-red-400 mt-2">{runState.stderr}</div>
+                )}
+                {runState.status === "done" &&
+                  !runState.stdout &&
+                  !runState.stderr &&
+                  !runState.compileStderr && (
+                    <span className="text-gray-500 italic">(no output)</span>
+                  )}
+              </div>
+            </div>
+          )}
+
+          {runState && !outputOpen && (
+            <button
+              onClick={() => setOutputOpen(true)}
+              className="px-3 py-1 text-xs text-gray-400 hover:text-white border-t border-neutral-700 bg-neutral-900 text-left"
+            >
+              Show output ▲
+            </button>
+          )}
         </section>
       </div>
 

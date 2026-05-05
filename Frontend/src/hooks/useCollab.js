@@ -21,7 +21,9 @@ export function useCollab({ url, roomId, username }) {
   const [error, setError] = useState(null)
   const [connected, setConnected] = useState(false)
   const [language, setLanguage] = useState(() => yMeta.get("language") || "javascript")
+  const [runState, setRunState] = useState(() => yMeta.get("run") || null)
   const colorRef = useRef(pickColor())
+  const socketRef = useRef(null)
 
   useEffect(() => {
     if (!username) return
@@ -30,8 +32,8 @@ export function useCollab({ url, roomId, username }) {
 
   useEffect(() => {
     const onMetaChange = () => {
-      const next = yMeta.get("language") || "javascript"
-      setLanguage(next)
+      setLanguage(yMeta.get("language") || "javascript")
+      setRunState(yMeta.get("run") || null)
     }
     yMeta.observe(onMetaChange)
     onMetaChange()
@@ -42,9 +44,18 @@ export function useCollab({ url, roomId, username }) {
     yMeta.set("language", lang)
   }
 
+  const triggerRun = () => {
+    if (socketRef.current) socketRef.current.emit("run", { roomId, runBy: username })
+  }
+
+  const clearEditor = () => {
+    if (yText.length > 0) yText.delete(0, yText.length)
+  }
+
   useEffect(() => {
     if (!roomId || !username) return
     const socket = io(url)
+    socketRef.current = socket
 
     socket.on("connect", () => {
       setConnected(true)
@@ -111,8 +122,14 @@ export function useCollab({ url, roomId, username }) {
       awareness.off("update", onLocalAwarenessUpdate)
       awareness.off("change", onAwarenessChange)
       socket.disconnect()
+      socketRef.current = null
     }
   }, [url, roomId, username, ydoc, awareness])
 
-  return { yText, yChat, awareness, users, creator, error, connected, language, changeLanguage }
+  return {
+    yText, yChat, awareness, users, creator, error, connected,
+    language, changeLanguage,
+    runState, triggerRun,
+    clearEditor,
+  }
 }
