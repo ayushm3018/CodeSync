@@ -8,6 +8,8 @@ import * as roomService from '../services/roomService.js';
 import * as docService from '../services/docService.js';
 import * as executionService from '../services/executionService.js';
 
+const roomClients = new Map();
+
 export function register(io) {
     io.on('connection', (socket) => {
         let socketRoom = null;
@@ -23,6 +25,9 @@ export function register(io) {
             socketRoom = roomId;
             socketClientId = clientId;
             socket.join(roomId);
+
+            if (!roomClients.has(roomId)) roomClients.set(roomId, new Map());
+            roomClients.get(roomId).set(clientId, socket);
 
             await docService.ensureLoaded(roomId);
 
@@ -53,15 +58,34 @@ export function register(io) {
             socket.to(roomId).emit('awareness', update);
         });
 
-        socket.on('run', async ({ roomId, runBy }) => {
+        socket.on('run', async ({ roomId, runBy, stdin }) => {
             if (!roomService.exists(roomId)) return;
-            const result = await executionService.runCode(roomId, runBy || 'unknown');
+            const result = await executionService.runCode(roomId, runBy || 'unknown', stdin || '');
             if (!result.ok) socket.emit('run-error', { message: result.error });
+        });
+
+        socket.on('kick', ({ roomId, targetClientId, kickBy }) => {
+            const room = roomService.get(roomId);
+            if (!room || room.creator !== kickBy) return;
+            const clients = roomClients.get(roomId);
+            if (!clients) return;
+            const targetSocket = clients.get(targetClientId);
+            if (!targetSocket) return;
+            targetSocket.emit('kicked', { message: 'You were removed by the room creator.' });
+            targetSocket.disconnect(true);
         });
 
         socket.on('disconnect', () => {
             if (!socketRoom) return;
             if (!roomService.exists(socketRoom)) return;
+
+            if (socketClientId != null) {
+                const clients = roomClients.get(socketRoom);
+                if (clients) {
+                    clients.delete(socketClientId);
+                    if (clients.size === 0) roomClients.delete(socketRoom);
+                }
+            }
 
             if (socketClientId != null && docService.hasAwareness(socketRoom)) {
                 const awareness = docService.getAwareness(socketRoom);

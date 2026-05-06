@@ -6,6 +6,7 @@ import {
   applyAwarenessUpdate,
 } from "y-protocols/awareness"
 import { io } from "socket.io-client"
+import { useNavigate } from "react-router-dom"
 
 const COLORS = ["#ef4444", "#f59e0b", "#10b981", "#3b82f6", "#a855f7", "#ec4899"]
 const pickColor = () => COLORS[Math.floor(Math.random() * COLORS.length)]
@@ -24,6 +25,7 @@ export function useCollab({ url, roomId, username }) {
   const [runState, setRunState] = useState(() => yMeta.get("run") || null)
   const colorRef = useRef(pickColor())
   const socketRef = useRef(null)
+  const navigate = useNavigate()
 
   useEffect(() => {
     if (!username) return
@@ -44,12 +46,16 @@ export function useCollab({ url, roomId, username }) {
     yMeta.set("language", lang)
   }
 
-  const triggerRun = () => {
-    if (socketRef.current) socketRef.current.emit("run", { roomId, runBy: username })
+  const triggerRun = (stdin = "") => {
+    if (socketRef.current) socketRef.current.emit("run", { roomId, runBy: username, stdin })
   }
 
   const clearEditor = () => {
     if (yText.length > 0) yText.delete(0, yText.length)
+  }
+
+  const kickUser = (targetClientId) => {
+    if (socketRef.current) socketRef.current.emit("kick", { roomId, targetClientId, kickBy: username })
   }
 
   useEffect(() => {
@@ -94,6 +100,11 @@ export function useCollab({ url, roomId, username }) {
       applyAwarenessUpdate(awareness, new Uint8Array(update), "remote")
     })
 
+    socket.on("kicked", ({ message }) => {
+      alert(message)
+      navigate("/")
+    })
+
     const onLocalDocUpdate = (update, origin) => {
       if (origin === "remote") return
       socket.emit("update", { roomId, update })
@@ -112,8 +123,12 @@ export function useCollab({ url, roomId, username }) {
     awareness.on("update", onLocalAwarenessUpdate)
 
     const onAwarenessChange = () => {
-      const states = Array.from(awareness.getStates().values())
-      setUsers(states.filter((s) => s.user?.name).map((s) => s.user))
+      const entries = Array.from(awareness.getStates().entries())
+      setUsers(
+        entries
+          .filter(([, s]) => s.user?.name)
+          .map(([clientId, s]) => ({ ...s.user, clientId }))
+      )
     }
     awareness.on("change", onAwarenessChange)
 
@@ -131,5 +146,6 @@ export function useCollab({ url, roomId, username }) {
     language, changeLanguage,
     runState, triggerRun,
     clearEditor,
+    kickUser,
   }
 }

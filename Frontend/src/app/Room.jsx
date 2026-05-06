@@ -38,18 +38,25 @@ function Room() {
   const [unread, setUnread] = useState(0)
   const lastSeenLengthRef = useRef(0)
 
-  useEffect(() => {
-    if (!username) navigate("/")
-  }, [username, navigate])
+  const [pendingName, setPendingName] = useState("")
+
+  const handleJoinWithName = (e) => {
+    e.preventDefault()
+    if (!pendingName.trim()) return
+    navigate(`/room/${roomId}?username=${encodeURIComponent(pendingName.trim())}`, { replace: true })
+  }
 
   const {
     yText, yChat, awareness, users, creator, error, connected,
     language, changeLanguage,
     runState, triggerRun, clearEditor,
+    kickUser,
   } = useCollab({ url: SERVER_URL, roomId, username })
 
   const [outputOpen, setOutputOpen] = useState(true)
   const lastRunIdRef = useRef(null)
+  const [stdin, setStdin] = useState("")
+  const [stdinOpen, setStdinOpen] = useState(false)
 
   useEffect(() => {
     if (runState && runState.id !== lastRunIdRef.current) {
@@ -135,13 +142,40 @@ function Room() {
     new MonacoBinding(yText, editor.getModel(), new Set([editor]), awareness)
   }
 
-  const copyId = () => {
-    navigator.clipboard.writeText(roomId)
+  const copyLink = () => {
+    navigator.clipboard.writeText(`${window.location.origin}/room/${roomId}`)
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }
 
-  if (!username) return null
+  if (!username) {
+    return (
+      <main className="h-screen w-full bg-neutral-950 flex items-center justify-center p-4">
+        <div className="w-full max-w-sm bg-neutral-900 rounded-xl p-8 border border-neutral-800">
+          <h2 className="text-white font-bold text-xl mb-1">Join Room</h2>
+          <p className="text-gray-400 text-sm mb-5">
+            Room <span className="font-mono text-white">{roomId}</span>
+          </p>
+          <form onSubmit={handleJoinWithName} className="flex flex-col gap-3">
+            <input
+              type="text"
+              placeholder="Your username"
+              value={pendingName}
+              onChange={(e) => setPendingName(e.target.value)}
+              className="px-4 py-3 rounded-lg bg-neutral-800 text-white border border-neutral-700 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-500"
+              autoFocus
+            />
+            <button
+              type="submit"
+              className="py-3 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-500 transition-colors"
+            >
+              Join
+            </button>
+          </form>
+        </div>
+      </main>
+    )
+  }
 
   if (error) {
     return (
@@ -182,10 +216,10 @@ function Room() {
               <p className="font-mono text-lg font-bold tracking-wider">{roomId}</p>
             </div>
             <button
-              onClick={copyId}
+              onClick={copyLink}
               className="px-3 py-1 text-xs bg-gray-800 text-white rounded hover:bg-gray-700"
             >
-              {copied ? "Copied!" : "Copy"}
+              {copied ? "Copied!" : "Copy Link"}
             </button>
           </div>
 
@@ -206,23 +240,34 @@ function Room() {
 
           <h2 className="text-xl font-bold p-4 pb-2">Users</h2>
           <ul className="px-4 pb-4 flex-1 overflow-y-auto">
-            {users.map((user, index) => {
+            {users.map((user) => {
               const isCreator = user.name === creator
+              const isMe = user.name === username
               return (
                 <li
-                  key={index}
+                  key={user.clientId}
                   className={`p-2 rounded mb-2 flex items-center justify-between ${
                     isCreator
                       ? "bg-amber-400 text-gray-900 font-semibold border-l-4 border-amber-700"
                       : "bg-gray-800 text-white"
                   }`}
                 >
-                  <span>{user.name}</span>
-                  {isCreator && (
-                    <span className="text-[10px] uppercase tracking-wide bg-amber-700 text-amber-50 px-2 py-0.5 rounded">
-                      creator
-                    </span>
-                  )}
+                  <span className="truncate">{user.name}</span>
+                  <div className="flex items-center gap-1 shrink-0 ml-1">
+                    {isCreator && (
+                      <span className="text-[10px] uppercase tracking-wide bg-amber-700 text-amber-50 px-2 py-0.5 rounded">
+                        creator
+                      </span>
+                    )}
+                    {!isCreator && !isMe && username === creator && (
+                      <button
+                        onClick={() => kickUser(user.clientId)}
+                        className="text-[10px] uppercase tracking-wide bg-red-600 text-white px-2 py-0.5 rounded hover:bg-red-500"
+                      >
+                        Kick
+                      </button>
+                    )}
+                  </div>
                 </li>
               )
             })}
@@ -233,7 +278,7 @@ function Room() {
           <div className="px-3 py-2 border-b border-neutral-700 flex items-center justify-between bg-neutral-900">
             <div className="flex items-center gap-2">
               <button
-                onClick={triggerRun}
+                onClick={() => triggerRun(stdin)}
                 disabled={!canRun}
                 title={
                   !RUNNABLE_LANGUAGES.has(language)
@@ -259,9 +304,31 @@ function Room() {
               >
                 Clear
               </button>
+              <button
+                onClick={() => setStdinOpen((o) => !o)}
+                className={`px-3 py-1 text-xs font-semibold rounded transition-colors ${
+                  stdinOpen
+                    ? "bg-blue-600 text-white"
+                    : "bg-neutral-700 text-gray-400 hover:text-white"
+                }`}
+                title="Toggle stdin input"
+              >
+                stdin {stdinOpen ? "▼" : "▶"}
+              </button>
             </div>
             <span className="text-xs text-gray-400 font-mono">{language}</span>
           </div>
+
+          {stdinOpen && (
+            <div className="border-b border-neutral-700 bg-neutral-900 px-3 py-2">
+              <textarea
+                value={stdin}
+                onChange={(e) => setStdin(e.target.value)}
+                placeholder="stdin input — sent when you click Run"
+                className="w-full bg-neutral-800 text-white font-mono text-xs rounded p-2 resize-none h-16 focus:outline-none focus:ring-1 focus:ring-neutral-500 placeholder-gray-600"
+              />
+            </div>
+          )}
 
           <div className="flex-1 min-h-0">
             <Editor

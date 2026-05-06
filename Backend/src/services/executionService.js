@@ -4,7 +4,7 @@ import { generateMessageId } from '../utils/ids.js';
 
 const runBusy = new Map();
 
-export async function runCode(roomId, runBy) {
+export async function runCode(roomId, runBy, stdin = '') {
     if (runBusy.get(roomId)) {
         return { ok: false, error: 'A run is already in progress' };
     }
@@ -31,7 +31,7 @@ export async function runCode(roomId, runBy) {
 
     let result;
     try {
-        const out = await pistonService.execute(language, code);
+        const out = await pistonService.execute(language, code, stdin);
         result = {
             id: runId,
             status: 'done',

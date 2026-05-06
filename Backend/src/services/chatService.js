@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
 import * as aiService from '../infrastructure/aiService.js';
-import { CHAT_HISTORY_LIMIT, STREAM_FLUSH_MS } from '../config.js';
+import { CHAT_HISTORY_LIMIT } from '../config.js';
 import { generateMessageId } from '../utils/ids.js';
 
 const chatBusy = new Map();
@@ -62,16 +62,11 @@ async function generateResponse(roomId, doc) {
     }, 'server');
 
     let accumulated = '';
-    let lastFlush = 0;
-    const flush = () => {
-        doc.transact(() => msg.set('content', accumulated), 'server');
-        lastFlush = Date.now();
-    };
 
     try {
         for await (const chunk of aiService.streamResponse(prompt)) {
             accumulated += chunk;
-            if (Date.now() - lastFlush > STREAM_FLUSH_MS) flush();
+            doc.transact(() => msg.set('content', accumulated), 'server');
         }
         doc.transact(() => {
             msg.set('content', accumulated);

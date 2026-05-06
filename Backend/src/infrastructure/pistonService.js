@@ -24,7 +24,7 @@ export function isRunnable(language) {
     return Boolean(versions[language]);
 }
 
-export async function execute(language, code) {
+export async function execute(language, code, stdin = '') {
     const version = versions[language];
     if (!version) throw new Error(`Language "${language}" cannot be executed`);
 
@@ -35,6 +35,7 @@ export async function execute(language, code) {
             language: PISTON_LANGS[language],
             version,
             files: [{ content: code }],
+            stdin,
         }),
     });
     const data = await res.json();
