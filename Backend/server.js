@@ -20,6 +20,7 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/rooms', roomRoutes);
 app.get('/health', (req, res) => res.json({ message: 'ok', success: true }));
+app.use((req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
