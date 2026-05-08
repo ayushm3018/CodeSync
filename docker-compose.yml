@@ -6,6 +6,15 @@ services:
     volumes:
       - redis-data:/data
 
+  piston:
+    image: ghcr.io/engineer-man/piston
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - piston-packages:/piston/packages
+    tmpfs:
+      - /piston/jobs:exec,uid=1000,gid=1000,mode=711
+
   backend:
     build:
       context: .
@@ -13,15 +22,17 @@ services:
     restart: unless-stopped
     depends_on:
       - redis
+      - piston
     environment:
       PORT: 3000
       REDIS_HOST: redis
       REDIS_PORT: 6379
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
-      PISTON_URL: ${PISTON_URL:-https://emkc.org/api/v2/piston}
+      PISTON_URL: http://piston:2000/api/v2
     ports:
       - "80:3000"
 
 volumes:
   redis-data:
+  piston-packages:
