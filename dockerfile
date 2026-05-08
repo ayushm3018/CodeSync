@@ -4,6 +4,7 @@ WORKDIR /app
 COPY ./Frontend/package*.json ./
 RUN npm ci
 COPY ./Frontend ./
+ENV NODE_OPTIONS=--max-old-space-size=1024
 RUN npm run build
 
 # Build the backend
