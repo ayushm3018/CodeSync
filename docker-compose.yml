@@ -29,6 +29,12 @@ services:
       - piston-packages:/piston/packages
     tmpfs:
       - /piston/jobs:exec,uid=1000,gid=1000,mode=711
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:2000/api/v2/runtimes"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
 
   backend:
     build:
@@ -36,8 +42,10 @@ services:
       dockerfile: dockerfile
     restart: unless-stopped
     depends_on:
-      - redis
-      - piston
+      redis:
+        condition: service_started
+      piston:
+        condition: service_healthy
     environment:
       PORT: 3000
       REDIS_HOST: redis
