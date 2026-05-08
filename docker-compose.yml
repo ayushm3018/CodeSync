@@ -1,4 +1,19 @@
 services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      DOMAIN: ${DOMAIN}
+    depends_on:
+      - backend
+
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -30,9 +45,9 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       PISTON_URL: http://piston:2000/api/v2
-    ports:
-      - "80:3000"
 
 volumes:
   redis-data:
   piston-packages:
+  caddy-data:
+  caddy-config:
