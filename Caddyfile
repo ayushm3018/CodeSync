@@ -1,3 +1,6 @@
 {$DOMAIN} {
     reverse_proxy backend:3000
 }
+
+# Other sites hosted on this box (e.g. Assessly) drop a *.caddy file in /srv/caddy/sites
+import /etc/caddy/sites/*.caddy
