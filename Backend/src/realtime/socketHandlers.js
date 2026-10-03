@@ -7,6 +7,10 @@ import {
 import * as roomService from '../services/roomService.js';
 import * as docService from '../services/docService.js';
 import * as executionService from '../services/executionService.js';
+import { createLimiter, clientIp } from '../utils/rateLimit.js';
+import { RUN_LIMIT } from '../config.js';
+
+const allowRun = createLimiter(RUN_LIMIT);
 
 const roomClients = new Map();
 
@@ -60,6 +64,10 @@ export function register(io) {
 
         socket.on('run', async ({ roomId, runBy, stdin }) => {
             if (!roomService.exists(roomId)) return;
+            if (!allowRun(clientIp(socket.handshake.headers, socket.handshake.address))) {
+                socket.emit('run-error', { message: 'Too many runs. Try again in a few minutes.' });
+                return;
+            }
             const result = await executionService.runCode(roomId, runBy || 'unknown', stdin || '');
             if (!result.ok) socket.emit('run-error', { message: result.error });
         });

@@ -7,6 +7,10 @@ export const SAVE_DEBOUNCE_MS = 2_000;
 export const CHAT_HISTORY_LIMIT = 10;
 export const STREAM_FLUSH_MS = 80;
 
+// Piston runs on the same small box as everything else, so cap how hard one IP can push it
+export const RUN_LIMIT = { limit: 30, windowMs: 5 * 60_000 };
+export const ROOM_CREATE_LIMIT = { limit: 20, windowMs: 15 * 60_000 };
+
 export const REDIS_HOST = process.env.REDIS_HOST || '127.0.0.1';
 export const REDIS_PORT = Number(process.env.REDIS_PORT) || 6379;
 
